@@ -69,7 +69,9 @@ const drawAttrs = {
   uniform vec2 resolution;
   uniform float t;
 
+  attribute vec2 quadPoint;
   attribute vec2 position;
+  attribute float radius;
   attribute vec2 uv;
   attribute float paletteIndex;
 
@@ -79,21 +81,20 @@ const drawAttrs = {
   void main() {
     vColor = vec3(paletteIndex, 0, 0);
     // 2 * position/resolution.xy - 1
-    gl_Position = vec4(2. * (position)/resolution - 1., 0, 1);
+    gl_Position = vec4(2. * (position + radius*quadPoint)/resolution - 1., 0, 1);
 
     vUv = uv;
   }`,
   attributes: {
-    position: (_, {pos, radius: r}) => { 
-      const [x,y] = pos;
-      return [
-        x-r, y-r,
-        x+r, y-r,
-        x-r, y+r,
-        x-r, y+r,
-        x+r, y-r,
-        x+r, y+r,]
-    },
+    quadPoint: [
+        -1, -1,
+        +1, -1,
+        -1, +1,
+        -1, +1,
+        +1, -1,
+        +1, +1,],
+    position: (_, { circlePos }) => ({ buffer: circlePos, divisor: 1 }), 
+    radius: (_, { circleRad }) => ({ buffer: circleRad, divisor: 1 }), 
     uv: [
         0, 0,
         1, 0,
@@ -108,6 +109,7 @@ const drawAttrs = {
     t: ({tick}) => tick,
   },
   count: 6,
+  instances: (_, {n}) => n,
   depth: {enable: false},
   blend: {
     enable: true,
@@ -122,7 +124,7 @@ const drawAttrs = {
 
 };
 
-const sketch = ({ gl, width, height }) => {
+const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   // Setup REGL with our canvas context
   const regl = createRegl({ gl, extensions: ['OES_standard_derivatives', 'ANGLE_instanced_arrays'] });
 
@@ -132,9 +134,9 @@ const sketch = ({ gl, width, height }) => {
   document.body.appendChild( stats.dom );
 
   const settings = {
-    width, height,
-    n: 1000,
-    maxSize: 400,
+    width: canvasWidth, height: canvasHeight,
+    n: 30000,
+    maxSize: 500,
     minSize: 1,
     nested: true,
   }
@@ -147,12 +149,15 @@ const sketch = ({ gl, width, height }) => {
   gui.add(settings, 'nested').name('Allow nested circles');
 
   let circles = [];
+  let circlePos = [];
+  let circleRad = [];
 
   let worker = work(require('./circles-worker.js'));
   worker.addEventListener('message', function (e) {
     if (e.data.type == 'DONE') {
       circles = e.data.circles;
-      console.log(circles);
+      circlePos = circles.map(c => c.pos);
+      circleRad = circles.map(c => c.radius);
     }
   });
 
@@ -186,7 +191,7 @@ const sketch = ({ gl, width, height }) => {
     //console.log(deltaTime);
 
     // Draw meshes to scene
-    draw(circles);
+    draw({ circlePos, circleRad, n: circles.length });
     stats.end();
   };
 };
