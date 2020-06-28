@@ -1,4 +1,5 @@
 const canvasSketch = require('canvas-sketch');
+const math = require('canvas-sketch-util/math');
 const createRegl = require('regl');
 const work = require('webworkify');
 const Stats = require('stats.js');
@@ -13,15 +14,14 @@ const settings = {
   attributes: { antialias: false }
 };
 
-function calcPaletteIndices(circles, calcFunc, def) {
-  const ts = [];
+function calcPaletteIndices(circles, calcFunc, def, pIx) {
   const calcOrder = circles.slice().sort((a,b) => a.touched - b.touched);
   maxT = 0;
   minT = 1;
   for (let c of calcOrder) {
     let newT;
     if (c.touched >= 0) {
-      const touched_t = ts[c.touched];
+      const touched_t = pIx[c.touched];
       if (touched_t === undefined) {
         console.error('Calculated out of order!');
       }
@@ -31,10 +31,8 @@ function calcPaletteIndices(circles, calcFunc, def) {
     }
     if (newT > maxT) maxT = newT;
     if (newT < minT) minT = newT;
-    ts[c.id] = newT;
+    pIx[c.id] = newT;
   }
-
-  return ts;
 }
 
 const drawAttrs = {
@@ -102,7 +100,7 @@ const drawAttrs = {
         0, 1,
         1, 0,
         1, 1,],
-    paletteIndex: () => { let x=1; return [0,x,x,x,x,0] },
+    paletteIndex: (_, { circlePIx }) => ({ buffer: circlePIx, divisor: 1 }),
   },
   uniforms: {
     resolution: ({viewportWidth, viewportHeight}) => [viewportWidth, viewportHeight],
@@ -139,18 +137,45 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     maxSize: 500,
     minSize: 1,
     nested: true,
+    lerpPercent: 0.1,
   }
 
-  // Create gui
-  const gui = new dat.GUI({ width: 400 });
-  gui.add(settings, 'n').name('Max number of circles')
-  gui.add(settings, 'maxSize').name('Max circle radius');
-  gui.add(settings, 'minSize').name('Min circle radius');
-  gui.add(settings, 'nested').name('Allow nested circles');
-
+  // Buffers used in render.
   let circles = [];
   let circlePos = [];
   let circleRad = [];
+
+  // These will be initialized as Float32Arrays whenever a new set of circles
+  // is generated.
+  let pIx; // Palette indices, element i is pIx for circle with id i.
+  let circlePIx; // Palette indices in order circles get rendered in.
+
+  const makeCirclePIx = (lerpPercent) => {
+    const calc = (t, inside) => {
+      if (inside) {
+        return math.lerp(t, 0, lerpPercent);
+      } else {
+        return math.lerp(t, 1, lerpPercent);
+      }
+    };
+    calcPaletteIndices(circles, calc, 0.5, pIx);
+    for (let i =0; i < circles.length; i++) {
+      circlePIx[i] = pIx[circles[i].id];
+    }
+  };
+
+  // Create gui
+  const gui = new dat.GUI({ width: 400 });
+  
+  const genGui = gui.addFolder('Generator options');
+  genGui.add(settings, 'n').name('Max number of circles')
+  genGui.add(settings, 'maxSize').name('Max circle radius');
+  genGui.add(settings, 'minSize').name('Min circle radius');
+  genGui.add(settings, 'nested').name('Allow nested circles');
+
+  const colorGui = gui.addFolder('Color options');
+  const lerpSlider = colorGui.add(settings, 'lerpPercent', 0, 1).name('Span (need better name)');
+  lerpSlider.onChange(t => makeCirclePIx(t));
 
   let worker = work(require('./circles-worker.js'));
   worker.addEventListener('message', function (e) {
@@ -158,6 +183,12 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
       circles = e.data.circles;
       circlePos = circles.map(c => c.pos);
       circleRad = circles.map(c => c.radius);
+
+      pIx = new Float32Array(circles.length);
+      circlePIx = new Float32Array(circles.length);
+      makeCirclePIx(settings.lerpPercent);
+
+      worker.terminate();
     }
   });
 
@@ -184,14 +215,16 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     regl.poll();
 
     // Clear back buffer
-    regl.clear({
-      color: [ 0, 0, 0, 1 ]
-    });
+    if (circles.length > 0) {
+      regl.clear({
+        color: [ 0.5, 0, 0, 1 ]
+      });
 
-    //console.log(deltaTime);
+      //console.log(deltaTime);
 
-    // Draw meshes to scene
-    draw({ circlePos, circleRad, n: circles.length });
+      // Draw meshes to scene
+      draw({ circlePos, circleRad, n: circles.length, circlePIx });
+    }
     stats.end();
   };
 };
