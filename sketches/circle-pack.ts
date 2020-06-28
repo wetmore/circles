@@ -2,8 +2,10 @@ const canvasSketch = require('canvas-sketch');
 const math = require('canvas-sketch-util/math');
 const createRegl = require('regl');
 const work = require('webworkify');
-const Stats = require('stats.js');
+import Stats = require('stats.js');
 const dat = require('dat.gui');
+
+const INITIAL_NUM_CIRCLES = 10000
 
 const settings = {
   // Make the loop animated
@@ -11,13 +13,13 @@ const settings = {
   // Get a WebGL canvas rather than 2D
   context: 'webgl',
   // Turn on MSAA
-  attributes: { antialias: false }
+  attributes: { antialias: false, alpha: false }
 };
 
-function calcPaletteIndices(circles, calcFunc, def, pIx) {
+function calcPaletteIndices(circles, calcFunc, def: number, pIx: Float32Array) {
   const calcOrder = circles.slice().sort((a,b) => a.touched - b.touched);
-  maxT = 0;
-  minT = 1;
+  let maxT = 0;
+  let minT = 1;
   for (let c of calcOrder) {
     let newT;
     if (c.touched >= 0) {
@@ -33,6 +35,7 @@ function calcPaletteIndices(circles, calcFunc, def, pIx) {
     if (newT < minT) minT = newT;
     pIx[c.id] = newT;
   }
+  return [minT, maxT];
 }
 
 const drawAttrs = {
@@ -52,11 +55,13 @@ const drawAttrs = {
     vec2 cxy = 2.0 * vUv - 1.0;
     r = dot(cxy, cxy);
     
-  //#ifdef GL_OES_standard_derivatives
-  //  delta = fwidth(r);
-  //  alpha = 1.0 - smoothstep(1.0 - delta, 1.0 + delta, r);
-  //#endif
-    alpha = 1. - step(1.,r);
+  #ifdef GL_OES_standard_derivatives
+    delta = fwidth(r);
+    // the +delta/2 term makes you able to see the edges of the quad... but if i do 1-delta circles dont touch
+    // i could make quad a bit bigger but the math would be annoying
+    alpha = 1.0 - smoothstep(1.0-delta/2., 1.0+delta/2., r);
+  #endif
+    //alpha = 1. - step(1.,r); // no antialias
 
     gl_FragColor = vec4(vColor, alpha);
     gl_FragColor.rgb *= gl_FragColor.a;
@@ -113,8 +118,8 @@ const drawAttrs = {
     enable: true,
     // See: https://stackoverflow.com/questions/45066688/blending-anti-aliased-circles-with-regl
     func: {
-      srcRGB:   'src alpha',
-      srcAlpha: 'src alpha',
+      srcRGB:   'one', // making these two 'src alpha' creates neat effect
+      srcAlpha: 'one',
       dstRGB:   'one minus src alpha',
       dstAlpha: 'one minus src alpha'
     }
@@ -133,24 +138,25 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
 
   const settings = {
     width: canvasWidth, height: canvasHeight,
-    n: 30000,
+    n: INITIAL_NUM_CIRCLES,
     maxSize: 500,
     minSize: 1,
     nested: true,
     lerpPercent: 0.1,
+    bgIndex: 0.5,
   }
 
-  // Buffers used in render.
   let circles = [];
-  let circlePos = [];
-  let circleRad = [];
+
+  let circlePos = [];//regl.buffer(settings.n);
+  let circleRad = [];//regl.buffer(settings.n);
 
   // These will be initialized as Float32Arrays whenever a new set of circles
   // is generated.
-  let pIx; // Palette indices, element i is pIx for circle with id i.
-  let circlePIx; // Palette indices in order circles get rendered in.
+  let pIx;// = regl.buffer(settings.n); // Palette indices, element i is pIx for circle with id i.
+  let circlePIx;// = regl.buffer(settings.n); // Palette indices in order circles get rendered in.
 
-  const makeCirclePIx = (lerpPercent) => {
+  const makeCirclePIx = (lerpPercent: number) => {
     const calc = (t, inside) => {
       if (inside) {
         return math.lerp(t, 0, lerpPercent);
@@ -158,7 +164,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
         return math.lerp(t, 1, lerpPercent);
       }
     };
-    calcPaletteIndices(circles, calc, 0.5, pIx);
+    calcPaletteIndices(circles, calc, settings.bgIndex, pIx);
     for (let i =0; i < circles.length; i++) {
       circlePIx[i] = pIx[circles[i].id];
     }
@@ -175,7 +181,9 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
 
   const colorGui = gui.addFolder('Color options');
   const lerpSlider = colorGui.add(settings, 'lerpPercent', 0, 1).name('Span (need better name)');
-  lerpSlider.onChange(t => makeCirclePIx(t));
+  const startSlider = colorGui.add(settings, 'bgIndex', 0, 1).name('BG palette index');
+  lerpSlider.onChange(makeCirclePIx);
+  startSlider.onChange(makeCirclePIx);
 
   let worker = work(require('./circles-worker.js'));
   worker.addEventListener('message', function (e) {
@@ -195,7 +203,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   worker.postMessage({
       width: settings.width,
       height: settings.height,
-      bgT: 0.5,
+      bgT: settings.bgIndex,
       maxAttempts: 10000,
       circleCount: settings.n,
       maxCircleSize: settings.maxSize,
@@ -217,7 +225,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     // Clear back buffer
     if (circles.length > 0) {
       regl.clear({
-        color: [ 0.5, 0, 0, 1 ]
+        color: [ settings.bgIndex, 0, 0, 1 ]
       });
 
       //console.log(deltaTime);
