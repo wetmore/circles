@@ -25,6 +25,7 @@ module.exports = function (self) {
     const maxBuffer = 50;
 
     while (circles.length < n && attempts < maxAttempts) {
+      // Get a random point
       let p = [random.value() * w, random.value() * h];
       let size = maxCircleSize;
       let touched = null;
@@ -39,7 +40,13 @@ module.exports = function (self) {
           break;
         }
       }
-      attempts++;
+
+      // let d = Math.abs(boxSDF([p[0]-w/2, p[1]-h/2], [w/4,h/4]));
+      // if (d < size) {
+      //     size = d;
+      //     touched = null;
+      //   }
+
       if (size > minCircleSize) {
         let inside = false;
         if (touched) {
@@ -99,12 +106,31 @@ module.exports = function (self) {
   });
 };
 
-function circleSDF(circle, point) {
-  return dist(circle.pos, point) - circle.radius;
+function transform(p, matrix) {
+  const px = point[0];
+  const py = point[1];
+  const pz = 1;
+
+
+  
+}
+
+function circleSDF(circle, p) {
+  //return length([circle.pos[0] - p[0],circle.pos[1] - p[1]]) - circle.radius;
+  return dist(circle.pos, p) - circle.radius;
+}
+
+function boxSDF([px,py], [bx,by]) {
+  const [dx,dy] = [Math.abs(px)-bx, Math.abs(py)-by];
+  return length([Math.max(dx,0),Math.max(dy,0)]) + Math.min(Math.max(dx,dy),0);
 }
 
 function dist(p, q) {
   const dx = p[0] - q[0];
   const dy = p[1] - q[1];
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function length(p) {
+  return Math.sqrt(p[0]*p[0] + p[1]*p[1]);
 }

@@ -199,8 +199,8 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     }
 
     void main() {
-      //vec3 color = palette( paletteIndex, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.1,0.2) );//vec3(paletteIndex, 0, 0);
-      vec3 color = vec3(paletteIndex, 0,0);
+      vec3 color = palette( paletteIndex, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.1,0.2) );//vec3(paletteIndex, 0, 0);
+      //vec3 color = vec3(paletteIndex, 0,0);
       gl_FragColor = vec4(color, 1);
     }`,
 

@@ -17,9 +17,8 @@ vec3 palette( in float t, in vec3 a, in vec3 b, in vec3 c, in vec3 d ) {
 }
 
 void main() {
-    vColor = vec3(paletteIndex, 0,0);
-    //vColor = palette( paletteIndex, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.1,0.2) );//vec3(paletteIndex, 0, 0);
-    // 2 * position/resolution.xy - 1
+    //vColor = vec3(paletteIndex, 0,0);
+    vColor = palette( paletteIndex, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.1,0.2) );//vec3(paletteIndex, 0, 0);
     gl_Position = vec4(2. * (position + radius*quadPoint)/resolution - 1., 0, 1);
 
     vUv = uv;
