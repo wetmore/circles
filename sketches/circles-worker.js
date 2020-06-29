@@ -2,7 +2,7 @@ const random = require('canvas-sketch-util/random')
 
 module.exports = function (self) {
   self.addEventListener("message", function (e) {
-    random.setSeed('seed');
+    random.setSeed('matt');
 
     const data = e.data;
     const w = data.width;
@@ -16,6 +16,8 @@ module.exports = function (self) {
 
     const circles = [];
     let attempts = 0;
+
+    console.log(`Generating ${n} circles`);
 
     // This is for calculating a rolling average of circle sizes.
     let buffer = [];
