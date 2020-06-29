@@ -4,6 +4,7 @@ const createRegl = require("regl");
 const work = require("webworkify");
 import Stats = require("stats.js");
 const dat = require("dat.gui");
+const Hammer = require('hammerjs');
 
 const fragmentShader = require("./circle.frag");
 const vertexShader = require("./circle.vert");
@@ -21,7 +22,7 @@ const settings = {
   attributes: { antialias: false, alpha: false },
 };
 
-const sketch = ({ gl, canvasWidth, canvasHeight }) => {
+const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
   // Setup REGL with our canvas context
   const regl = createRegl({
     gl,
@@ -104,7 +105,27 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   startSlider.onChange(() => {
     NEEDS_PIX_CALC = true;
   });
+  expSlider.onChange(() => {
+    NEEDS_PIX_CALC = true;
+  });
   colorGui.add(settings, "animate");
+
+  // Set up touch events
+  let hammer = new Hammer(canvas);
+  hammer.on('panmove', (e) => {
+    const u = e.center.x / width;
+    const v = e.center.y / height
+    if (e.pointers.length == 1) {
+      settings.lerpPercent = u;
+      settings.bgIndex = v;
+    }
+    if (e.pointers.length == 2) {
+      settings.lerpExponent = v*5;
+    }
+    NEEDS_PIX_CALC = true;
+  });
+
+
 
   let worker = work(require("./circles-worker.ts"));
   worker.addEventListener("message", function (e) {
@@ -290,6 +311,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
         }
 
         bufPIx({ data: pIx });
+        NEEDS_PIX_CALC = false;
         NEEDS_DRAW = true;
       }
 
