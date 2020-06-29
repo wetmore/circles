@@ -5,7 +5,10 @@ const work = require('webworkify');
 import Stats = require('stats.js');
 const dat = require('dat.gui');
 
-const INITIAL_NUM_CIRCLES = 60000
+const fragmentShader = require('./circle.frag');
+const vertexShader = require('./circle.vert');
+
+const INITIAL_NUM_CIRCLES = 6000
 
 const settings = {
   // Make the loop animated
@@ -17,55 +20,8 @@ const settings = {
 };
 
 const drawAttrs = {
-  frag: `
-  #ifdef GL_OES_standard_derivatives
-  #extension GL_OES_standard_derivatives : enable
-  #endif
-
-  precision mediump float;
-
-  varying vec3 vColor;
-  varying vec2 vUv;
-
-  void main() {
-
-    float r = 0.0, delta = 0.0, alpha = 1.0;
-    vec2 cxy = 2.0 * vUv - 1.0;
-    r = dot(cxy, cxy);
-    
-  #ifdef GL_OES_standard_derivatives
-    delta = fwidth(r);
-    // the +delta/2 term makes you able to see the edges of the quad... but if i do 1-delta circles dont touch
-    // i could make quad a bit bigger but the math would be annoying
-    alpha = 1.0 - smoothstep(1.0-delta/2., 1.0+delta/2., r);
-  #endif
-    //alpha = 1. - step(1.,r); // no antialias
-
-    gl_FragColor = vec4(vColor, alpha);
-    gl_FragColor.rgb *= gl_FragColor.a;
-  }`,
-  vert: `
-  precision mediump float;
-
-  uniform vec2 resolution;
-  uniform float t;
-
-  attribute vec2 quadPoint;
-  attribute vec2 position;
-  attribute float radius;
-  attribute vec2 uv;
-  attribute float paletteIndex;
-
-  varying vec3 vColor;
-  varying vec2 vUv;
-
-  void main() {
-    vColor = vec3(paletteIndex, 0, 0);
-    // 2 * position/resolution.xy - 1
-    gl_Position = vec4(2. * (position + radius*quadPoint)/resolution - 1., 0, 1);
-
-    vUv = uv;
-  }`,
+  frag: fragmentShader,
+  vert: vertexShader,
   attributes: {
     quadPoint: [
         -1, -1,
@@ -114,6 +70,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   stats.showPanel( 0 ); // 0: fps, 1: ms, 2: mb, 3+: custom
   document.body.appendChild( stats.dom );
 
+  // Settings for the sketch.
   const settings = {
     width: canvasWidth, height: canvasHeight,
     n: INITIAL_NUM_CIRCLES,
@@ -122,30 +79,34 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     nested: true,
     lerpPercent: 0.1,
     bgIndex: 0.5,
+    animate: false,
   }
 
   let numLoadedCircles = 0;
-
-  let circlePos = regl.buffer(settings.n);
-  let circleRad = regl.buffer(settings.n);
   
   // Info about circle touches.
   let touchInfo: Int32Array; 
   // The order in which to calculate circle color indices.
   let calcOrder: Int32Array;
+  // Array to use for calculating palette index values
+  let pIx: Float32Array; 
 
-
-  let pIx: Float32Array;  // Array to use for calculating palette indices values
-  // Buffer with that info
+  // Buffers used by regl.
+  let circlePos = regl.buffer(settings.n);
+  let circleRad = regl.buffer(settings.n);
   let circlePIx = regl.buffer({ length: settings.n });
 
-  const makeCirclePIx = (lerpPercent: number) => {
+  // Flags controlling frame behaviour.
+  let NEEDS_DRAW = false;
+  let NEEDS_PIX_CALC = false;
+
+  const makeCirclePIx = () => {
     // Interesting lerp function.
     const calc = (t, inside) => {
       if (inside) {
-        return math.lerp(t, 0, lerpPercent);
+        return math.lerp(t, 0, settings.lerpPercent);
       } else {
-        return math.lerp(t, 1, lerpPercent);
+        return math.lerp(t, 1, settings.lerpPercent);
       }
     };
 
@@ -163,10 +124,6 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
         }
         const touchedIndex = info - 1;
         const touched_t = pIx[touchedIndex];
-        // TODO this won't ever trigger now that i use typedarray
-        if (touched_t === undefined) {
-          console.error('Calculated out of order!');
-        }
         newT = calc(touched_t, inside);
       }
       if (newT > maxT) maxT = newT;
@@ -188,10 +145,11 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   genGui.add(settings, 'nested').name('Allow nested circles');
 
   const colorGui = gui.addFolder('Color options');
-  const lerpSlider = colorGui.add(settings, 'lerpPercent', 0, 1).name('Span (need better name)');
-  const startSlider = colorGui.add(settings, 'bgIndex', 0, 1).name('BG palette index');
-  lerpSlider.onChange(makeCirclePIx);
-  startSlider.onChange(makeCirclePIx);
+  const lerpSlider = colorGui.add(settings, 'lerpPercent', 0, 1).name('Span (need better name)').listen();
+  const startSlider = colorGui.add(settings, 'bgIndex', 0, 1).name('BG palette index').listen();
+  lerpSlider.onChange(() => {NEEDS_PIX_CALC = true});
+  startSlider.onChange(() => {NEEDS_PIX_CALC = true});
+  colorGui.add(settings, 'animate');
 
   let worker = work(require('./circles-worker.js'));
   worker.addEventListener('message', function (e) {
@@ -211,12 +169,14 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
 
       pIx = new Float32Array(numLoadedCircles);
       // move out into loop and trigger with a flag
-      makeCirclePIx(settings.lerpPercent);
+      
+      NEEDS_PIX_CALC = true;
 
       worker.terminate();
     }
   });
 
+  // Kick off a generation request
   worker.postMessage({
       width: settings.width,
       height: settings.height,
@@ -231,10 +191,8 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   // Regl GL draw commands
   const draw = regl(drawAttrs);
 
-  const d = 50;
-
   // Return the renderer function
-  return ({ deltaTime }) => {
+  return ({ deltaTime, time }) => {
     stats.begin();
     // Update regl sizes
     regl.poll();
@@ -245,10 +203,20 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
         color: [ settings.bgIndex, 0, 0, 1 ]
       });
 
-      //console.log(deltaTime);
+      if (settings.animate) {
+        settings.lerpPercent = (1 + Math.cos(time/4))*(1 + Math.sin(time))/4;
+        settings.bgIndex = (1 + Math.sin(1/3 * time))/2;
+        NEEDS_PIX_CALC = true;
+      }
 
-      // Draw meshes to scene
-      draw({ circlePos, circleRad, n: numLoadedCircles, circlePIx });
+      if (NEEDS_PIX_CALC) {
+        makeCirclePIx();
+        NEEDS_DRAW = true;
+      }
+
+      if (NEEDS_DRAW) {
+        draw({ circlePos, circleRad, n: numLoadedCircles, circlePIx });
+      }
     }
     stats.end();
   };
