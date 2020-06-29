@@ -93,7 +93,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   });
   colorGui.add(settings, "animate");
 
-  let worker = work(require("./circles-worker.js"));
+  let worker = work(require("./circles-worker.ts"));
   worker.addEventListener("message", function (e) {
     if (e.data.type == "LOADING") {
       // LOL

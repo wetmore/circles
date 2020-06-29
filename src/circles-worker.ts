@@ -107,8 +107,8 @@ module.exports = function (self) {
 };
 
 function transform(p, matrix) {
-  const px = point[0];
-  const py = point[1];
+  const px = p[0];
+  const py = p[1];
   const pz = 1;
 
 
@@ -122,7 +122,7 @@ function circleSDF(circle, p) {
 
 function boxSDF([px,py], [bx,by]) {
   const [dx,dy] = [Math.abs(px)-bx, Math.abs(py)-by];
-  return length([Math.max(dx,0),Math.max(dy,0)]) + Math.min(Math.max(dx,dy),0);
+  return len([Math.max(dx,0),Math.max(dy,0)]) + Math.min(Math.max(dx,dy),0);
 }
 
 function dist(p, q) {
@@ -131,6 +131,6 @@ function dist(p, q) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function length(p) {
+function len(p) {
   return Math.sqrt(p[0]*p[0] + p[1]*p[1]);
 }
