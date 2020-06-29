@@ -11,6 +11,8 @@ const vertexShader = require("./circle.vert");
 const INITIAL_NUM_CIRCLES = 100;
 
 const settings = {
+  //dimensions: [5*screen.width/8, 5*screen.height/8],
+  pixelRatio: window.devicePixelRatio,
   // Make the loop animated
   animate: true,
   // Get a WebGL canvas rather than 2D
@@ -33,14 +35,15 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
 
   // Settings for the sketch.
   const settings = {
+    seed: 'seed',
     width: canvasWidth,
     height: canvasHeight,
     n: INITIAL_NUM_CIRCLES,
     maxSize: 1000,
     minSize: 2,
     nested: true,
-    lerpPercent: 0.1,
-    lerpExponent: 1,
+    lerpPercent: 0.4,
+    lerpExponent: 0.4,
     bgIndex: 0.5,
     animate: false,
   };
@@ -64,13 +67,23 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   let NEEDS_PIX_CALC = false;
 
   // Create gui
-  const gui = new dat.GUI({ width: 400 });
+  const gui = new dat.GUI({ width: Math.min(400, screen.availWidth) });
+  if (screen.availWidth < 400) {
+    let guiEl = <HTMLElement>document.querySelector('.dg.a')
+    guiEl.style.margin = '0';
+  }
+
+  if (screen.availWidth < 450) {
+    stats.dom.style.bottom = '0';
+    stats.dom.style.top = '';
+  }
 
   const genGui = gui.addFolder("Generator options");
   genGui.add(settings, "n").name("Max number of circles");
   genGui.add(settings, "maxSize").name("Max circle radius");
   genGui.add(settings, "minSize").name("Min circle radius");
   genGui.add(settings, "nested").name("Allow nested circles");
+  genGui.add(settings, "seed").name("Randomizer seed");
 
   const colorGui = gui.addFolder("Color options");
   const lerpSlider = colorGui
@@ -132,6 +145,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   let buttons = {};
   buttons['generate'] = () => {
     worker.postMessage({
+      seed: settings.seed,
       width: settings.width,
       height: settings.height,
       bgT: settings.bgIndex,
@@ -143,7 +157,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     });
   }
 
-  genGui.add(buttons, 'generate');
+  genGui.add(buttons, 'generate').name('Click to generate!');
 
   // Regl GL draw commands
   const drawCircles = regl({
