@@ -8,7 +8,7 @@ const dat = require('dat.gui');
 const fragmentShader = require('./circle.frag');
 const vertexShader = require('./circle.vert');
 
-const INITIAL_NUM_CIRCLES = 6000
+const INITIAL_NUM_CIRCLES = 70000
 
 const settings = {
   // Make the loop animated
@@ -23,22 +23,23 @@ const drawAttrs = {
   frag: fragmentShader,
   vert: vertexShader,
   attributes: {
+    // prevent hard edges at nesw points of circle
     quadPoint: [
-        -1, -1,
-        +1, -1,
-        -1, +1,
-        -1, +1,
-        +1, -1,
-        +1, +1,],
+        -1.2, -1.2,
+        +1.2, -1.2,
+        -1.2, +1.2,
+        -1.2, +1.2,
+        +1.2, -1.2,
+        +1.2, +1.2,],
     position: (_, { circlePos }) => ({ buffer: circlePos, divisor: 1 }), 
     radius: (_, { circleRad }) => ({ buffer: circleRad, divisor: 1 }), 
     uv: [
-        0, 0,
-        1, 0,
-        0, 1,
-        0, 1,
-        1, 0,
-        1, 1,],
+        -.1, -.1,
+        1.1, -.1,
+        -.1, 1.1,
+        -.1, 1.1,
+        1.1, -.1,
+        1.1, 1.1,],
     paletteIndex: (_, { circlePIx }) => ({ buffer: circlePIx, divisor: 1 }),
   },
   uniforms: {
@@ -153,6 +154,10 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
 
   let worker = work(require('./circles-worker.js'));
   worker.addEventListener('message', function (e) {
+    if (e.data.type == 'LOADING') {
+      // LOL
+      document.title = Math.floor(e.data.num / e.data.total * 100) + '%';
+    }
     if (e.data.type == 'DONE') {
       numLoadedCircles = e.data.n;
 
@@ -168,7 +173,6 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
       calcOrder.sort((a,b) => Math.abs(touchInfo[a]) - Math.abs(touchInfo[b]));
 
       pIx = new Float32Array(numLoadedCircles);
-      // move out into loop and trigger with a flag
       
       NEEDS_PIX_CALC = true;
 
@@ -190,6 +194,44 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
 
   // Regl GL draw commands
   const draw = regl(drawAttrs);
+
+  const background = regl({
+    frag: `
+    precision mediump float;
+    uniform float paletteIndex;
+
+    vec3 palette( in float t, in vec3 a, in vec3 b, in vec3 c, in vec3 d ) {
+      return a + b*cos( 6.28318*(c*t+d) );
+    }
+
+    void main() {
+      vec3 color = palette( paletteIndex, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.1,0.2) );//vec3(paletteIndex, 0, 0);
+
+      gl_FragColor = vec4(color, 1);
+    }`,
+
+    vert: `
+    precision mediump float;
+
+    attribute vec2 position;
+
+    void main() {
+      gl_Position = vec4(position, 0, 1);
+    }`,
+    count: 6,
+    attributes: {
+      position: [
+        -1, -1,
+        +1, -1,
+        -1, +1,
+        -1, +1,
+        +1, -1,
+        +1, +1,],
+    },
+    uniforms: {
+      paletteIndex: regl.prop('index')
+    }
+  })
 
   // Return the renderer function
   return ({ deltaTime, time }) => {
@@ -215,6 +257,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
       }
 
       if (NEEDS_DRAW) {
+        background({ index: settings.bgIndex });
         draw({ circlePos, circleRad, n: numLoadedCircles, circlePIx });
       }
     }

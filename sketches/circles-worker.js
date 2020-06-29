@@ -61,7 +61,7 @@ module.exports = function (self) {
 
         if (circles.length % 10 == 0) {
           self.postMessage({
-            type: "PROGRESS",
+            type: "LOADING",
             num: circles.length,
             total: n,
           });
