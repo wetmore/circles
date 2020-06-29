@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "canvas-sketch src/circle-pack.ts -- -p [ tsify ]",
+    "build": "canvas-sketch src/circle-pack.ts --build --name index --inline -- -p [ tsify ]"
   },
   "keywords": [],
   "author": "",
