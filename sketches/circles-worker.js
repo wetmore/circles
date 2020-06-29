@@ -2,6 +2,8 @@ const random = require('canvas-sketch-util/random')
 
 module.exports = function (self) {
   self.addEventListener("message", function (e) {
+    random.setSeed('seed');
+
     const data = e.data;
     const w = data.width;
     const h = data.height;
@@ -37,7 +39,6 @@ module.exports = function (self) {
       }
       attempts++;
       if (size > minCircleSize) {
-        let t = bgT;
         let inside = false;
         if (touched) {
           inside = circleSDF(touched, p) < 0;
@@ -69,9 +70,29 @@ module.exports = function (self) {
       attempts++;
     }
 
+    const numGenerated = circles.length;
+    let positions = [];
+    let radii = new Float32Array(numGenerated);
+    // 0 => no touch
+    // n => touches circle at index abs(n)-1
+    // negative means nested, positive not nested.
+    // this may be stupid... trading possible runtime cost to save a few kB of memory
+    let touchInfo = new Int32Array(numGenerated);
+
+    for (let i = 0; i < numGenerated; i++) {
+      const c = circles[i];
+      positions.push(c.pos);
+      radii[i] = c.radius;
+      let sign = c.inside ? -1 : 1;
+      touchInfo[i] = sign * (c.touched + 1);
+    }
+
     self.postMessage({
       type: "DONE",
-      circles: circles.sort((x, y) => y.radius - x.radius),
+      n: numGenerated,
+      positions,
+      radii,
+      touchInfo,
     });
   });
 };

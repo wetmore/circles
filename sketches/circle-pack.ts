@@ -5,7 +5,7 @@ const work = require('webworkify');
 import Stats = require('stats.js');
 const dat = require('dat.gui');
 
-const INITIAL_NUM_CIRCLES = 10000
+const INITIAL_NUM_CIRCLES = 60000
 
 const settings = {
   // Make the loop animated
@@ -15,28 +15,6 @@ const settings = {
   // Turn on MSAA
   attributes: { antialias: false, alpha: false }
 };
-
-function calcPaletteIndices(circles, calcFunc, def: number, pIx: Float32Array) {
-  const calcOrder = circles.slice().sort((a,b) => a.touched - b.touched);
-  let maxT = 0;
-  let minT = 1;
-  for (let c of calcOrder) {
-    let newT;
-    if (c.touched >= 0) {
-      const touched_t = pIx[c.touched];
-      if (touched_t === undefined) {
-        console.error('Calculated out of order!');
-      }
-      newT = calcFunc(touched_t, c.inside);
-    } else {
-      newT = def;
-    }
-    if (newT > maxT) maxT = newT;
-    if (newT < minT) minT = newT;
-    pIx[c.id] = newT;
-  }
-  return [minT, maxT];
-}
 
 const drawAttrs = {
   frag: `
@@ -146,17 +124,23 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     bgIndex: 0.5,
   }
 
-  let circles = [];
+  let numLoadedCircles = 0;
 
-  let circlePos = [];//regl.buffer(settings.n);
-  let circleRad = [];//regl.buffer(settings.n);
+  let circlePos = regl.buffer(settings.n);
+  let circleRad = regl.buffer(settings.n);
+  
+  // Info about circle touches.
+  let touchInfo: Int32Array; 
+  // The order in which to calculate circle color indices.
+  let calcOrder: Int32Array;
 
-  // These will be initialized as Float32Arrays whenever a new set of circles
-  // is generated.
-  let pIx;// = regl.buffer(settings.n); // Palette indices, element i is pIx for circle with id i.
-  let circlePIx;// = regl.buffer(settings.n); // Palette indices in order circles get rendered in.
+
+  let pIx: Float32Array;  // Array to use for calculating palette indices values
+  // Buffer with that info
+  let circlePIx = regl.buffer({ length: settings.n });
 
   const makeCirclePIx = (lerpPercent: number) => {
+    // Interesting lerp function.
     const calc = (t, inside) => {
       if (inside) {
         return math.lerp(t, 0, lerpPercent);
@@ -164,10 +148,34 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
         return math.lerp(t, 1, lerpPercent);
       }
     };
-    calcPaletteIndices(circles, calc, settings.bgIndex, pIx);
-    for (let i =0; i < circles.length; i++) {
-      circlePIx[i] = pIx[circles[i].id];
+
+    // Sort the indices, such that if i < j in sorted indices, pIx[i] will be set
+    // before pIx[j].
+    let maxT = 0;
+    let minT = 1;
+    for (let i = 0; i < calcOrder.length; i++) {
+      let newT = settings.bgIndex;
+      let info = touchInfo[i];
+      if (info !== 0) {
+        const inside = info < 0;
+        if (inside) {
+          info *= -1;
+        }
+        const touchedIndex = info - 1;
+        const touched_t = pIx[touchedIndex];
+        // TODO this won't ever trigger now that i use typedarray
+        if (touched_t === undefined) {
+          console.error('Calculated out of order!');
+        }
+        newT = calc(touched_t, inside);
+      }
+      if (newT > maxT) maxT = newT;
+      if (newT < minT) minT = newT;
+      pIx[i] = newT;
     }
+
+    //circlePIx.subdata(pIx);
+    circlePIx({data: pIx});
   };
 
   // Create gui
@@ -188,12 +196,21 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
   let worker = work(require('./circles-worker.js'));
   worker.addEventListener('message', function (e) {
     if (e.data.type == 'DONE') {
-      circles = e.data.circles;
-      circlePos = circles.map(c => c.pos);
-      circleRad = circles.map(c => c.radius);
+      numLoadedCircles = e.data.n;
 
-      pIx = new Float32Array(circles.length);
-      circlePIx = new Float32Array(circles.length);
+      circlePos({ data: e.data.positions });
+      circleRad({ data: e.data.radii });
+
+      touchInfo = e.data.touchInfo;
+
+      calcOrder = new Int32Array(numLoadedCircles)
+      for (let i = 0; i < touchInfo.length; i++) {
+        calcOrder[i] = i;
+      }
+      calcOrder.sort((a,b) => Math.abs(touchInfo[a]) - Math.abs(touchInfo[b]));
+
+      pIx = new Float32Array(numLoadedCircles);
+      // move out into loop and trigger with a flag
       makeCirclePIx(settings.lerpPercent);
 
       worker.terminate();
@@ -223,7 +240,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
     regl.poll();
 
     // Clear back buffer
-    if (circles.length > 0) {
+    if (numLoadedCircles > 0) {
       regl.clear({
         color: [ settings.bgIndex, 0, 0, 1 ]
       });
@@ -231,7 +248,7 @@ const sketch = ({ gl, canvasWidth, canvasHeight }) => {
       //console.log(deltaTime);
 
       // Draw meshes to scene
-      draw({ circlePos, circleRad, n: circles.length, circlePIx });
+      draw({ circlePos, circleRad, n: numLoadedCircles, circlePIx });
     }
     stats.end();
   };
