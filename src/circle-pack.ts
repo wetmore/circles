@@ -34,8 +34,9 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
   stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
   document.body.appendChild(stats.dom);
 
+
   // Settings for the sketch.
-  const settings = {
+  let settingsObject = {
     seed: 'seed',
     width: canvasWidth,
     height: canvasHeight,
@@ -48,6 +49,35 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
     bgIndex: 0.5,
     animate: false,
   };
+
+  const immediateSaveSettings = ['lerpPercent','lerpExponent','bgIndex','animate'];
+
+  if (window.location.hash !== '') {
+    let o = JSON.parse(atob(window.location.hash.slice(1)));
+    settingsObject = o;
+  }
+
+  const handler = () => {
+    let timeout = null;
+
+    return {
+      set: (obj, prop, value) => {
+        obj[prop] = value;
+        if (immediateSaveSettings.includes(prop)) {
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+          timeout = setTimeout(() => {
+            console.log('saved to url')
+            window.location.hash = btoa(JSON.stringify(obj));
+          }, 250);
+        }
+        return true;
+      }
+    }
+  }
+
+  const settings = new Proxy(settingsObject, handler());
 
   let numLoadedCircles = 0;
 
@@ -112,6 +142,7 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
 
   // Set up touch events
   let hammer = new Hammer(canvas);
+  hammer.get('pan').set({ direction: Hammer.DIRECTION_ALL });
   hammer.on('panmove', (e) => {
     const u = e.center.x / width;
     const v = e.center.y / height
@@ -124,8 +155,6 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
     }
     NEEDS_PIX_CALC = true;
   });
-
-
 
   let worker = work(require("./circles-worker.ts"));
   worker.addEventListener("message", function (e) {
@@ -165,6 +194,8 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
 
   let buttons = {};
   buttons['generate'] = () => {
+    // Save settings used to generate this batch to url.
+    window.location.hash = btoa(JSON.stringify(settingsObject));
     worker.postMessage({
       seed: settings.seed,
       width: settings.width,
@@ -198,7 +229,7 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
         +1.2,
         -1.2,
         +1.2,
-        +1.2,
+        +1.2
       ],
       uv: [-0.1, -0.1, 1.1, -0.1, -0.1, 1.1, -0.1, 1.1, 1.1, -0.1, 1.1, 1.1],
       position: { buffer: regl.prop("bufPosition"), divisor: 1 },
@@ -320,6 +351,7 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
         drawCircles({ bufPosition, bufRadius, n: numLoadedCircles, bufPIx });
       }
     }
+
     stats.end();
   };
 };
