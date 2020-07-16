@@ -14,8 +14,6 @@ void main() {
 
     #ifdef GL_OES_standard_derivatives
     delta = fwidth(r);
-    // the +delta/2 term makes you able to see the edges of the quad... but if i do 1-delta circles dont touch
-    // i could make quad a bit bigger but the math would be annoying
     alpha = 1.0 - smoothstep(1.0-delta/2., 1.0+delta/2., r);
     #endif
     //alpha = 1. - step(1.,r); // no antialias
