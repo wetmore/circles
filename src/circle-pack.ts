@@ -4,12 +4,15 @@ const createRegl = require("regl");
 const work = require("webworkify");
 import Stats = require("stats.js");
 const dat = require("dat.gui");
-const Hammer = require('hammerjs');
+const Hammer = require("hammerjs");
 
 const fragmentShader = require("./circle.frag");
 const vertexShader = require("./circle.vert");
 
-const INITIAL_NUM_CIRCLES = 100;
+const INITIAL_NUM_CIRCLES = 1000;
+
+const loadState = { prc: 0 };
+let loadGuiEl;
 
 const settings = {
   //dimensions: [5*screen.width/8, 5*screen.height/8],
@@ -34,10 +37,9 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
   stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
   document.body.appendChild(stats.dom);
 
-
   // Settings for the sketch.
   let settingsObject = {
-    seed: 'seed',
+    seed: "seed",
     width: canvasWidth,
     height: canvasHeight,
     n: INITIAL_NUM_CIRCLES,
@@ -50,9 +52,14 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
     animate: false,
   };
 
-  const immediateSaveSettings = ['lerpPercent','lerpExponent','bgIndex','animate'];
+  const immediateSaveSettings = [
+    "lerpPercent",
+    "lerpExponent",
+    "bgIndex",
+    "animate",
+  ];
 
-  if (window.location.hash !== '') {
+  if (window.location.hash !== "") {
     let o = JSON.parse(atob(window.location.hash.slice(1)));
     settingsObject = o;
   }
@@ -68,14 +75,14 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
             clearTimeout(timeout);
           }
           timeout = setTimeout(() => {
-            console.log('saved to url')
+            console.log("saved to url");
             window.location.hash = btoa(JSON.stringify(obj));
           }, 250);
         }
         return true;
-      }
-    }
-  }
+      },
+    };
+  };
 
   const settings = new Proxy(settingsObject, handler());
 
@@ -100,16 +107,17 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
   // Create gui
   const gui = new dat.GUI({ width: Math.min(400, screen.availWidth) });
   if (screen.availWidth < 400) {
-    let guiEl = <HTMLElement>document.querySelector('.dg.a')
-    guiEl.style.margin = '0';
+    let guiEl = <HTMLElement>document.querySelector(".dg.a");
+    guiEl.style.margin = "0";
   }
 
   if (screen.availWidth < 450) {
-    stats.dom.style.bottom = '0';
-    stats.dom.style.top = '';
+    stats.dom.style.bottom = "0";
+    stats.dom.style.top = "";
   }
 
   const genGui = gui.addFolder("Generator options");
+  genGui.open();
   genGui.add(settings, "n").name("Max number of circles");
   genGui.add(settings, "maxSize").name("Max circle radius");
   genGui.add(settings, "minSize").name("Min circle radius");
@@ -142,16 +150,16 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
 
   // Set up touch events
   let hammer = new Hammer(canvas);
-  hammer.get('pan').set({ direction: Hammer.DIRECTION_ALL });
-  hammer.on('panmove', (e) => {
+  hammer.get("pan").set({ direction: Hammer.DIRECTION_ALL });
+  hammer.on("panmove", (e) => {
     const u = e.center.x / width;
-    const v = e.center.y / height
+    const v = e.center.y / height;
     if (e.pointers.length == 1) {
       settings.lerpPercent = u;
       settings.bgIndex = v;
     }
     if (e.pointers.length == 2) {
-      settings.lerpExponent = v*5;
+      settings.lerpExponent = v * 5;
     }
     NEEDS_PIX_CALC = true;
   });
@@ -161,10 +169,13 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
     if (e.data.type == "LOADING") {
       // LOL
       document.title = Math.floor((e.data.num / e.data.total) * 100) + "%";
+      loadState.prc = Math.floor((e.data.num / e.data.total) * 100);
+      loadGuiEl.name(`${e.data.num} / ${e.data.total}`);
     }
     if (e.data.type == "DONE") {
       console.log(e.data);
       numLoadedCircles = e.data.n;
+      genGui.remove(loadGuiEl);
 
       // Re-initialize buffers with new data.
       bufPosition({ data: e.data.positions });
@@ -193,7 +204,7 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
   });
 
   let buttons = {};
-  buttons['generate'] = () => {
+  buttons["generate"] = () => {
     // Save settings used to generate this batch to url.
     window.location.hash = btoa(JSON.stringify(settingsObject));
     worker.postMessage({
@@ -207,9 +218,15 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
       minCircleSize: settings.minSize,
       nested: settings.nested,
     });
-  }
 
-  genGui.add(buttons, 'generate').name('Click to generate!');
+    const loadui = document.createElement("div");
+    loadui.classList.add("loadUi");
+    document.body.appendChild(loadui);
+
+    loadGuiEl = genGui.add(loadState, "prc", 0, 100).listen();
+  };
+
+  genGui.add(buttons, "generate").name("Click to generate!");
 
   // Regl GL draw commands
   const drawCircles = regl({
@@ -229,7 +246,7 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
         +1.2,
         -1.2,
         +1.2,
-        +1.2
+        +1.2,
       ],
       uv: [-0.1, -0.1, 1.1, -0.1, -0.1, 1.1, -0.1, 1.1, 1.1, -0.1, 1.1, 1.1],
       position: { buffer: regl.prop("bufPosition"), divisor: 1 },
@@ -288,7 +305,7 @@ const sketch = ({ gl, width, height, canvasWidth, canvasHeight, canvas }) => {
   });
 
   // Initial circle generation
-  buttons['generate']();
+  buttons["generate"]();
 
   // Return the renderer function
   return ({ deltaTime, time }) => {
